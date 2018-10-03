@@ -94,6 +94,8 @@ int main(int argc, char *argv[])
     GError         *err = NULL;
     GOptionContext *context;
     guint           error = 0;
+
+    //Opens the UDP socket and creates new thread to run listening protocol.
     int udp_fd = udp_socket_open(50000);
     int * fd_ptr = &(udp_fd);
     printf("UDP FD: %d", udp_fd);
