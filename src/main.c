@@ -22,6 +22,7 @@
 
 #include <glib/gi18n.h>
 #include <glib/gstdio.h>
+#include <pthread.h>
 #include <gtk/gtk.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -37,7 +38,7 @@
 #include "mod-mgr.h"
 #include "sat-cfg.h"
 #include "sat-log.h"
-
+#include "gtk-rot-ctrl.h"
 
 /* Main application widget. */
 GtkWidget      *app;
@@ -94,6 +95,13 @@ int main(int argc, char *argv[])
     GOptionContext *context;
     guint           error = 0;
 
+    //Opens the UDP socket and creates new thread to run listening protocol.
+    int udp_fd = udp_socket_open(50000);
+    int * fd_ptr = &(udp_fd);
+    printf("UDP FD: %d", udp_fd);
+    pthread_t thread_id;
+    pthread_create(&thread_id, NULL, udp_listen,(void *)fd_ptr);
+		
 
 #ifdef ENABLE_NLS
     bindtextdomain(PACKAGE, PACKAGE_LOCALE_DIR);
