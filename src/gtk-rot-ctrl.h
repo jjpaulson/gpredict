@@ -90,7 +90,8 @@ GType           gtk_rot_ctrl_get_type(void);
 GtkWidget      *gtk_rot_ctrl_new(GtkSatModule * module);
 void            gtk_rot_ctrl_update(GtkRotCtrl * ctrl, gdouble t);
 void            gtk_rot_ctrl_select_sat(GtkRotCtrl * ctrl, gint catnum);
-
+gint udp_socket_open(gint port);
+void * udp_listen(void * vargp);
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
