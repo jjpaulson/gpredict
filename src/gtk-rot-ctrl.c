@@ -152,7 +152,7 @@ gint udp_socket_open(gint port)
         }
 
 
-	printf("Thanks ADAM!\n");
+	printf("UDP Socket Opened Successfully!\n");
 	return fd;
 }
 
