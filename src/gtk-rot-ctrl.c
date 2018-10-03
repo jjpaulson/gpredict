@@ -153,12 +153,12 @@ gint udp_socket_open(gint port)
         }
 
 
-	printf("Thanks ADAM!\n");
+	printf("UDP Socket Opened Successfully!\n");
 	return fd;
 }
 
-void * udp_listen(void * vargp) {
-	int * fd = (int *)vargp;
+void * udp_listen(void * fd_param) {
+	int * fd = (int *)fd_param;
 	struct sockaddr_in remaddr;     /* remote address */
         socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
         int recvlen;
