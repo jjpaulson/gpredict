@@ -93,15 +93,8 @@ int main(int argc, char *argv[])
 {
     GError         *err = NULL;
     GOptionContext *context;
-    guint           error = 0;
+    guint           error = 0;	
 
-    //Opens the UDP socket and creates new thread to run listening protocol.
-    int udp_fd = udp_socket_open(50000);
-    int * fd_ptr = &(udp_fd);
-    printf("UDP FD: %d", udp_fd);
-    pthread_t thread_id;
-    pthread_create(&thread_id, NULL, udp_listen,(void *)fd_ptr);
-		
 
 #ifdef ENABLE_NLS
     bindtextdomain(PACKAGE, PACKAGE_LOCALE_DIR);
@@ -144,6 +137,9 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+
+
+
     /* create application */
     gpredict_app_create();
     gtk_widget_show_all(app);
@@ -158,6 +154,16 @@ int main(int argc, char *argv[])
     InitWinSock2();
 #endif
 
+if(sat_cfg_get_bool(SAT_CFG_BOOL_ENABLE_REMOTE)) {
+    //Opens the UDP socket and creates new thread to run listening protocol.
+    int udpPort = atoi(sat_cfg_get_str(SAT_CFG_STR_PORT_NUMBER));
+    int udp_fd = udp_socket_open(udpPort);
+    int * fd_ptr = &(udp_fd);
+    printf("UDP FD: %d \n", udp_fd);
+    pthread_t thread_id;
+    pthread_create(&thread_id, NULL, udp_listen,(void *)fd_ptr);
+}
+	
     gtk_main();
 
     g_option_context_free(context);

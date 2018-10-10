@@ -117,6 +117,7 @@ sat_cfg_bool_t  sat_cfg_bool[SAT_CFG_BOOL_NUM] = {
     {"GLOBAL", "MAIN_WIN_POS", FALSE},
     {"GLOBAL", "MOD_WIN_POS", FALSE},
     {"GLOBAL", "MOD_STATE", FALSE},
+    {"GLOBAL", "ENABLE_REMOTE", TRUE},
     {"MODULES", "RULES_HINT", FALSE},
     {"MODULES", "MAP_QTH_INFO", TRUE},
     {"MODULES", "MAP_NEXT_EVENT", TRUE},
@@ -145,7 +146,7 @@ sat_cfg_int_t   sat_cfg_int[SAT_CFG_INT_NUM] = {
     {"MODULES", "VIEW_2", GTK_SAT_MOD_VIEW_POLAR},      /* FIXME */
     {"MODULES", "VIEW_3", GTK_SAT_MOD_VIEW_SINGLE},     /* FIXME */
     {"GLOBAL", "CURRENT_PAGE", -1},     /* FIXME */
-    {"GLOBAL", "WARP", 1},
+    {"GLOBAL", "WARP", 1}, 
     {"MODULES", "LIST_REFRESH", 1},
     {"MODULES", "LIST_COLUMNS", LIST_COLUMNS_DEFAULTS},
     {"MODULES", "MAP_CENTER", 0},
@@ -215,6 +216,7 @@ sat_cfg_str_t   sat_cfg_str[SAT_CFG_STR_NUM] = {
     {"GLOBAL", "DEFAULT_QTH", "sample.qth"},
     {"GLOBAL", "OPEN_MODULES", "Amateur"},
     {"GLOBAL", "HTML_BROWSER", NULL},
+    {"GLOBAL", "PORT_NUMBER", "50000"},
     {"MODULES", "GRID", "1;0;2;0;1;2;0;1;1;2;3;1;2;1;2"},
     {"MODULES", "MAP_FILE", "nasa-bmng-07_1024.jpg"},
     {"MODULES", "MAP_FONT", "Sans 8"},

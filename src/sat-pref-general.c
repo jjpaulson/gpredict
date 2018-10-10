@@ -33,6 +33,7 @@
 #include "sat-pref-general.h"
 #include "sat-pref-qth.h"
 #include "sat-pref-tle.h"
+#include "sat-pref-remote.h"
 
 /**
  * Create and initialise widgets for the general prefs tab.
@@ -59,6 +60,9 @@ GtkWidget      *sat_pref_general_create()
     gtk_notebook_append_page(GTK_NOTEBOOK(nbook),
                              sat_pref_debug_create(),
                              gtk_label_new(_("Message Logs")));
+    gtk_notebook_append_page(GTK_NOTEBOOK(nbook),
+                             sat_pref_remote_create(),
+                             gtk_label_new(_("Remote")));
 
     return nbook;
 }
@@ -70,6 +74,7 @@ void sat_pref_general_cancel()
     sat_pref_qth_cancel();
     sat_pref_tle_cancel();
     sat_pref_debug_cancel();
+    sat_pref_remote_cancel();
 }
 
 /** User pressed OK. Any changes should be stored in config. */
@@ -79,4 +84,5 @@ void sat_pref_general_ok()
     sat_pref_qth_ok();
     sat_pref_tle_ok();
     sat_pref_debug_ok();
+    sat_pref_remote_ok();
 }
