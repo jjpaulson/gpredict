@@ -55,7 +55,7 @@
 #include "gtk-rot-ctrl.h"
 #include "predict-tools.h"
 #include "sat-log.h"
-
+#include "sat-cfg.h"
 
 #define FMTSTR "%7.2f\302\260"
 #define MAX_ERROR_COUNT 5
@@ -125,53 +125,52 @@ static gint rotctld_socket_open(const gchar * host, gint port)
 /* Open the UDP  socket. Returns file descriptor or -1 if an error occurs */
 gint udp_socket_open(gint port)
 {
-	struct sockaddr_in myaddr;      /* our address */
-        struct sockaddr_in remaddr;     /* remote address */
-        socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
-        int recvlen;                    /* # bytes received */
-        int fd;                         /* our socket */
-        unsigned char buf[512];     /* receive buffer */
+    struct sockaddr_in myaddr;      /* our address */
+    //struct sockaddr_in remaddr;     /* remote address */
+    //socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
+    //int recvlen;                    /* # bytes received */
+    int fd;                         /* our socket */
+    //unsigned char buf[512];     /* receive buffer */
 
-        /* create a UDP socket */
+    /* create a UDP socket */
+    if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("cannot create socket\n");
+        return 0;
+    }
 
-        if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-                perror("cannot create socket\n");
-                return 0;
-        }
+    /* bind the socket to any valid IP address and a specific port */
+    memset((char *)&myaddr, 0, sizeof(myaddr));
+    myaddr.sin_family = AF_INET;
+    myaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    myaddr.sin_port = htons(port);
+    
+    if (bind(fd, (struct sockaddr *)&myaddr, sizeof(myaddr)) < 0) {
+        perror("bind failed");
+        return 0;
+    }
 
-        /* bind the socket to any valid IP address and a specific port */
-
-        memset((char *)&myaddr, 0, sizeof(myaddr));
-        myaddr.sin_family = AF_INET;
-        myaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-        myaddr.sin_port = htons(port);
-
-        if (bind(fd, (struct sockaddr *)&myaddr, sizeof(myaddr)) < 0) {
-                perror("bind failed");
-                return 0;
-        }
-
-
-	printf("UDP Socket Opened Successfully!\n");
-	return fd;
+    printf("UDP Socket Opened Successfully!\n");
+    return fd;
 }
 
 void * udp_listen(void * fd_param) {
-	int * fd = (int *)fd_param;
-	struct sockaddr_in remaddr;     /* remote address */
-        socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
-        int recvlen;
-	unsigned char buf[512];
+    int * fd = (int *)fd_param;
+    char * portNumber = sat_cfg_get_str(SAT_CFG_STR_PORT_NUMBER);
+    struct sockaddr_in remaddr;     /* remote address */
+    socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
+    int recvlen;
+    unsigned char buf[512];
 
-	for (;;) {
-                printf("waiting on port %d\n", 50000);
-                recvlen = recvfrom(*fd, buf, 512, 0, (struct sockaddr *)&remaddr, &addrlen);
-                printf("received %d bytes\n", recvlen);
-                if (recvlen > 0) {
-                        buf[recvlen] = 0;
-                        printf("received message: \"%s\"\n", buf);
-                }
+    for (;;) {
+        printf("waiting on port %s\n", portNumber);
+        recvlen = recvfrom(*fd, buf, 512, 0, (struct sockaddr *)&remaddr, &addrlen);
+        printf("received %d bytes\n", recvlen);
+
+        if (recvlen > 0) {
+            buf[recvlen] = 0;
+            printf("received message: \"%s\"\n", buf);
         }
+    }
 }
 
 /* Close a rotcld socket. First send a q command to cleanly shut down rotctld */
