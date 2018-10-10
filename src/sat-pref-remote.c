@@ -43,7 +43,6 @@ GtkWidget       *sat_pref_remote_create()
     gtk_box_pack_start(GTK_BOX(vbox), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL), FALSE, FALSE, 0);
 
     return vbox;
-
 }
 
 void sat_pref_remote_cancel() {
