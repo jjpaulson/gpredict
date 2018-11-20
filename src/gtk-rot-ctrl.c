@@ -57,12 +57,14 @@
 #include "predict-tools.h"
 #include "sat-log.h"
 #include "sat-cfg.h"
+#include "mod-mgr.h"
+#include "gtk-sat-module-popup.h"
 
 #define FMTSTR "%7.2f\302\260"
 #define MAX_ERROR_COUNT 5
 
 static GtkVBoxClass *parent_class = NULL;
-
+extern GSList * modules;
 
 /* Open the rotcld socket. Returns file descriptor or -1 if an error occurs */
 static gint rotctld_socket_open(const gchar * host, gint port)
@@ -160,18 +162,106 @@ void * udp_listen(void * fd_param) {
     struct sockaddr_in remaddr;     /* remote address */
     socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
     int recvlen;
-    unsigned char buf[512];
+    char buf[512];
 
     for (;;) {
         printf("waiting on port %s\n", portNumber);
         recvlen = recvfrom(*fd, buf, 512, 0, (struct sockaddr *)&remaddr, &addrlen);
         printf("received %d bytes\n", recvlen);
-
+        
         if (recvlen > 0) {
             buf[recvlen] = 0;
-            printf("received message: \"%s\"\n", buf);
+            udp_handle_command(buf);
+            //printf("received message: \"%s\"\n", buf);
         }
     }
+}
+
+void udp_handle_command(char * command) {
+    /*
+     * "engagerot\n" - engage rotator. Return "ack/nak"
+     * "disengagerot\n" - stop rotator. Return "ack/nak"
+     * "track[name]" - track satellite w/ name specified. Return "ack/nak"
+     * "retstatus" - return status. Return "[engaged/disengaged][satname]"
+     * "getPos" - return pos, az, el. Return "az[theta],el[#]"
+     * */
+    
+    char * engage = "engagerot\n";
+    char * disengage = "disengagerot\n";
+    char * track = "track\n";
+    char * status = "retstatus\n";
+    char * position = "getPos\n";
+
+    gint page;
+    GtkSatModule * module;
+    //extern GtkWidget * rot_menuitem;
+    //extern GSList * modules; 
+    page = sat_cfg_get_int(SAT_CFG_INT_MODULE_CURRENT_PAGE);
+    module = g_slist_nth_data(modules, page);
+
+
+    if(module != NULL) {
+        GtkRotCtrl * ctrl = GTK_ROT_CTRL(module->rotctrl);
+        
+        if(ctrl != NULL) {
+        if(gpredict_strcmp(command, engage) == 0) {
+            g_idle_add(engageCallBack, ctrl);
+        }
+        else if(gpredict_strcmp(command, disengage) == 0) {
+            g_idle_add(disengageCallBack, ctrl); 
+        }   
+        else if(gpredict_strcmp(command, track) == 0) {
+            g_idle_add(trackCallBack, ctrl);
+        }
+        else if(gpredict_strcmp(command, status) == 0) {
+            printf("Getting Status!\n");
+        }
+        else if(gpredict_strcmp(command, position) == 0) {
+            printf("Getting Position!\n");
+        }
+        else {
+            printf("Command not recognized!\n");
+        }
+    
+        }
+    }
+}
+
+gboolean trackCallBack(void * data) {
+    GtkRotCtrl     *ctrl = GTK_ROT_CTRL(data);
+
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctrl->track), 
+            !(gtk_toggle_button_get_active((GTK_TOGGLE_BUTTON(ctrl->track)))));
+
+    printf("Tracking!");
+
+    return FALSE;
+}
+
+gboolean engageCallBack(void * data) {
+    GtkRotCtrl     *ctrl = GTK_ROT_CTRL(data);
+    
+    if(!(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ctrl->LockBut)))) {
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctrl->LockBut), TRUE); 
+        printf("Engaging!");
+    }
+    else
+        printf("Rotor already engaged!");
+
+    return FALSE;
+}
+
+gboolean disengageCallBack(void * data) {
+    GtkRotCtrl     *ctrl = GTK_ROT_CTRL(data);
+    
+    if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ctrl->LockBut))) {
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctrl->LockBut), FALSE); 
+        printf("Disengaging!");
+    }
+    else
+        printf("Rotor already disengaged!");
+
+    return FALSE;
 }
 
 /* Close a rotcld socket. First send a q command to cleanly shut down rotctld */
@@ -304,7 +394,6 @@ static gboolean is_flipped_pass(pass_t * pass, rot_az_type_t type,
             caz = detail->az;
 
             while (caz > max_az)
-                caz -= 360;
 
             while (caz < min_az)
                 caz += 360;
@@ -1432,7 +1521,7 @@ static GtkWidget *create_conf_widgets(GtkRotCtrl * ctrl)
             if (rotname)
             {
                 gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT
-                                               (ctrl->DevSel), rotname);
+                                                (ctrl->DevSel), rotname);
                 g_free(rotname);
             }
         }
