@@ -25,6 +25,8 @@ extern "C" {
 
 #define IS_GTK_ROT_CTRL(obj)       G_TYPE_CHECK_INSTANCE_TYPE (obj, gtk_rot_ctrl_get_type ())
 
+extern GSList * modules;
+
 typedef struct _gtk_rot_ctrl GtkRotCtrl;
 typedef struct _GtkRotCtrlClass GtkRotCtrlClass;
 
@@ -92,6 +94,10 @@ void            gtk_rot_ctrl_update(GtkRotCtrl * ctrl, gdouble t);
 void            gtk_rot_ctrl_select_sat(GtkRotCtrl * ctrl, gint catnum);
 gint udp_socket_open(gint port);
 void * udp_listen(void * vargp);
+void udp_handle_command(char * command);
+gboolean trackCallBack(void * data);
+gboolean engageCallBack(void * data);
+gboolean disengageCallBack(void * data);
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
