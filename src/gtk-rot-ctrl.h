@@ -29,6 +29,7 @@ extern GSList * modules;
 
 typedef struct _gtk_rot_ctrl GtkRotCtrl;
 typedef struct _GtkRotCtrlClass GtkRotCtrlClass;
+struct sockaddr_in;
 
 struct _gtk_rot_ctrl {
     GtkBox          box;
@@ -52,6 +53,8 @@ struct _gtk_rot_ctrl {
 
     rotor_conf_t   *conf;
     gdouble         t;          /*!< Time when sat data last has been updated. */
+    const gchar    *azVal;
+    const gchar    *elVal;
 
     /* satellites */
     GSList         *sats;       /*!< List of sats in parent module */
@@ -59,6 +62,7 @@ struct _gtk_rot_ctrl {
     pass_t         *pass;       /*!< Next pass of target satellite */
     qth_t          *qth;        /*!< The QTH for this module */
     gboolean        flipped;    /*!< Whether the current pass loaded is a flip pass or not */
+    gint            satCatNum;
 
     guint           delay;      /*!< Timeout delay. */
     guint           timerid;    /*!< Timer ID */
@@ -69,6 +73,11 @@ struct _gtk_rot_ctrl {
     gboolean        engaged;    /*!< Flag indicating that rotor device is engaged. */
 
     gint            errcnt;     /*!< Error counter. */
+
+    /* UDP parameters */
+    gint fd;
+    struct sockaddr_in * remaddr;
+
 
     /* TCP client to rotctld */
     struct {
@@ -94,12 +103,23 @@ GType           gtk_rot_ctrl_get_type(void);
 GtkWidget      *gtk_rot_ctrl_new(GtkSatModule * module);
 void            gtk_rot_ctrl_update(GtkRotCtrl * ctrl, gdouble t);
 void            gtk_rot_ctrl_select_sat(GtkRotCtrl * ctrl, gint catnum);
+
 gint udp_socket_open(gint port);
 void * udp_listen(void * vargp);
-void udp_handle_command(char * command);
+void udp_handle_command(char * command, struct sockaddr_in remaddr, int fd);
+
+
+gboolean rigTrackCallBack(void * data);
 gboolean trackCallBack(void * data);
+
 gboolean engageCallBack(void * data);
+gboolean rigEngageCallBack(void * data);
+
 gboolean disengageCallBack(void * data);
+gboolean rigDisengageCallBack(void * data);
+
+gboolean posCallBack(void * data);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

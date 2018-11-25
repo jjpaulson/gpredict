@@ -45,15 +45,18 @@
 #include <errno.h>
 #include <glib.h>
 #include <glib/gi18n.h>
+#include <glib/gprintf.h>
 #include <gtk/gtk.h>
 #include <math.h>
 #include <string.h>             /* strerror() */
+#include <stdlib.h>
 
 #include "compat.h"
 #include "gpredict-utils.h"
 #include "gtk-polar-plot.h"
 #include "gtk-rot-knob.h"
 #include "gtk-rot-ctrl.h"
+#include "gtk-rig-ctrl.h"
 #include "predict-tools.h"
 #include "sat-log.h"
 #include "sat-cfg.h"
@@ -63,6 +66,7 @@
 #define FMTSTR "%7.2f\302\260"
 #define MAX_ERROR_COUNT 5
 
+static gboolean get_pos(GtkRotCtrl * ctrl, gdouble * az, gdouble * el);
 static GtkVBoxClass *parent_class = NULL;
 extern GSList * modules;
 
@@ -171,13 +175,13 @@ void * udp_listen(void * fd_param) {
         
         if (recvlen > 0) {
             buf[recvlen] = 0;
-            udp_handle_command(buf);
+            udp_handle_command(buf, remaddr, *fd);
             //printf("received message: \"%s\"\n", buf);
         }
     }
 }
 
-void udp_handle_command(char * command) {
+void udp_handle_command(char * command, struct sockaddr_in remaddr, gint fd) {
     /*
      * "engagerot\n" - engage rotator. Return "ack/nak"
      * "disengagerot\n" - stop rotator. Return "ack/nak"
@@ -188,9 +192,16 @@ void udp_handle_command(char * command) {
     
     char * engage = "engagerot\n";
     char * disengage = "disengagerot\n";
-    char * track = "track\n";
+    char * track = "track";
     char * status = "retstatus\n";
     char * position = "getPos\n";
+
+    char subCommand[6];
+    if(strlen(command) >= 5) {
+        memcpy(subCommand, &command[0], 5);
+        subCommand[5] = '\0';
+    }
+
 
     gint page;
     GtkSatModule * module;
@@ -202,38 +213,169 @@ void udp_handle_command(char * command) {
 
     if(module != NULL) {
         GtkRotCtrl * ctrl = GTK_ROT_CTRL(module->rotctrl);
+        GtkRigCtrl * rigCtrl = GTK_RIG_CTRL(module->rigctrl);
+        gboolean currTracked = ctrl->tracking;
+        gboolean currEngaged = ctrl->engaged;
         
+
         if(ctrl != NULL) {
-        if(gpredict_strcmp(command, engage) == 0) {
-            g_idle_add(engageCallBack, ctrl);
-        }
-        else if(gpredict_strcmp(command, disengage) == 0) {
-            g_idle_add(disengageCallBack, ctrl); 
-        }   
-        else if(gpredict_strcmp(command, track) == 0) {
-            g_idle_add(trackCallBack, ctrl);
-        }
-        else if(gpredict_strcmp(command, status) == 0) {
-            printf("Getting Status!\n");
-        }
-        else if(gpredict_strcmp(command, position) == 0) {
-            printf("Getting Position!\n");
-        }
-        else {
-            printf("Command not recognized!\n");
-        }
+            if(gpredict_strcmp(command, engage) == 0) {
+                g_idle_add(engageCallBack, ctrl);
+                g_idle_add(rigEngageCallBack, rigCtrl);
+
+                if(!(currEngaged)) {
+                    printf("Engaging!\n");
+                    sendto(fd, "Engaging!\n", strlen("Engaging!\n"), 0, (struct sockaddr *)&remaddr,
+                            sizeof(remaddr));
+                }
+                else {
+                    printf("Already Engaged!\n");
+                    sendto(fd, "Already Engaged!\n", strlen("Already Engaged!\n"), 0, 
+                            (struct sockaddr *)&remaddr, sizeof(remaddr));
+                }
+            }
+            else if(gpredict_strcmp(command, disengage) == 0) {
+                g_idle_add(disengageCallBack, ctrl);
+                g_idle_add(rigDisengageCallBack, rigCtrl);
+
+                if(currEngaged) {
+                    printf("Disengaging!\n");
+                    sendto(fd, "Disengaging!\n", strlen("Disengaging!\n"), 0, (struct sockaddr *)&remaddr,
+                            sizeof(remaddr)); 
+                }
+                else {
+                    printf("Already Disengaged!\n");
+                    sendto(fd, "Already Disengaged!\n", strlen("Already Disengaged!\n"), 0, 
+                            (struct sockaddr *)&remaddr, sizeof(remaddr));
+                }
+            }   
+            else if(gpredict_strcmp(subCommand, track) == 0) {
+                //printf("%c", command[5]);
+                //printf("%c", command[strlen(command)-2]);
+                //printf("%li\n", strlen(command));
+                if(command[5] == '[' && command[strlen(command)-2] == ']') {
+                    int len = strlen(command) - 7;
+                    gchar satname[len];
+                    memcpy(satname, &command[6], len-1);
+                    satname[len] = '\0';
+                   
+                    //printf("%s\n", satname);
+
+                    gint satCatNum = g_strtod(satname, NULL);
+                    ctrl->satCatNum = satCatNum;
+                    rigCtrl->satCatNum = satCatNum;
+
+                    g_idle_add(trackCallBack, ctrl);
+                    g_idle_add(rigTrackCallBack, rigCtrl);
+
+                    if(!(currTracked)) {
+                        printf("Tracking!\n");
+                        sendto(fd, "Tracking!\n", strlen("Tracking!\n"), 0, (struct sockaddr *)&remaddr,
+                                sizeof(remaddr));
+                    }
+                    else {
+                        printf("Disabling Tracking!\n");
+                        sendto(fd, "Disabling Tracking!\n", strlen("Disabling Tracking!\n"), 0, 
+                                (struct sockaddr *)&remaddr, sizeof(remaddr));
+                    }
+                }
+                else {
+                    printf("Track command not properly input!\n");
+                    sendto(fd, "Track command not properly input!\n", 
+                            strlen("Track command not properly input!\n"), 0, (struct sockaddr *)&remaddr,
+                            sizeof(remaddr));
+                }
+            }
+            else if(gpredict_strcmp(command, status) == 0) {
+                
+                gchar * satName;
+                if(ctrl->target != NULL) {
+                    satName = ctrl->target->name;    
+                }
+                else {
+                    satName = "NULL";
+                }
+               
+                gchar outStr[50];
+                if(currEngaged) {
+                    sprintf(outStr, "engaged %s\n", satName);
+                    printf("%s", outStr);
+                    sendto(fd, outStr, strlen(outStr), 0, 
+                            (struct sockaddr *)&remaddr, sizeof(remaddr));
+                }
+                else {
+                    sprintf(outStr, "disengaged %s\n", satName);
+                    printf("%s", outStr);
+                    sendto(fd, outStr, strlen(outStr), 0, 
+                            (struct sockaddr *)&remaddr, sizeof(remaddr)); 
+                }
+                
+            }
+            else if(gpredict_strcmp(command, position) == 0) {
+                ctrl->remaddr = &remaddr;
+                ctrl->fd = fd;
+
+                //g_idle_add(posCallBack, ctrl);
+
+                
+                gchar out[50];
+                ctrl->azVal = gtk_label_get_text(GTK_LABEL(ctrl->AzRead));
+                ctrl->elVal = gtk_label_get_text(GTK_LABEL(ctrl->ElRead));
+
+                g_sprintf(out, "az[%s] el[%s]\n", ctrl->azVal, ctrl->elVal);
+                g_printf("%s", out);
+                
+
+                sendto(ctrl->fd, out, strlen(out), 0, (struct sockaddr *)(ctrl->remaddr), 
+                        sizeof(*(ctrl->remaddr)));
+                
+                //sendto(ctrl->fd, "Testing\n", strlen("Testing\n"), 0, (struct sockaddr *)(ctrl->remaddr),
+                        //sizeof(*(ctrl->remaddr)));
+            }
+            else {
+                printf("Command not recognized!\n");
+                sendto(fd, "Command not recognized!\n", strlen("Command not recognized!\n"), 0,
+                        (struct sockaddr *)&remaddr, sizeof(remaddr));
+            }
     
         }
     }
 }
 
-gboolean trackCallBack(void * data) {
-    GtkRotCtrl     *ctrl = GTK_ROT_CTRL(data);
+gboolean posCallBack(void * data) {
+    GtkRotCtrl *ctrl = GTK_ROT_CTRL(data);
+
+    gchar out[50];
+
+    ctrl->azVal = gtk_label_get_text(GTK_LABEL(ctrl->AzRead));
+    ctrl->elVal = gtk_label_get_text(GTK_LABEL(ctrl->ElRead));
+
+    g_sprintf(out, "az[%s] el[%s]\n", ctrl->azVal, ctrl->elVal);
+    g_printf("%s", out);
+
+    sendto(ctrl->fd, out, strlen(out), 0, (struct sockaddr *)(ctrl->remaddr),
+                        sizeof(*(ctrl->remaddr)));
+    return FALSE;
+}
+
+gboolean rigTrackCallBack(void * data) {
+    GtkRigCtrl *ctrl = GTK_RIG_CTRL(data);
+
+    gtk_rig_ctrl_select_sat(ctrl, ctrl->satCatNum);
 
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctrl->track), 
             !(gtk_toggle_button_get_active((GTK_TOGGLE_BUTTON(ctrl->track)))));
 
-    printf("Tracking!");
+    return FALSE;
+}
+
+gboolean trackCallBack(void * data) {
+    GtkRotCtrl     *ctrl = GTK_ROT_CTRL(data);
+
+    gtk_rot_ctrl_select_sat(ctrl, ctrl->satCatNum);
+
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctrl->track), 
+            !(gtk_toggle_button_get_active((GTK_TOGGLE_BUTTON(ctrl->track)))));
 
     return FALSE;
 }
@@ -243,12 +385,19 @@ gboolean engageCallBack(void * data) {
     
     if(!(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ctrl->LockBut)))) {
         gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctrl->LockBut), TRUE); 
-        printf("Engaging!");
     }
-    else
-        printf("Rotor already engaged!");
-
+    
     return FALSE;
+}
+
+gboolean rigEngageCallBack(void * data) {
+    GtkRigCtrl      *ctrl = GTK_RIG_CTRL(data);
+
+    if(!(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ctrl->LockBut)))) {
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctrl->LockBut), TRUE); 
+    }
+
+    return FALSE; 
 }
 
 gboolean disengageCallBack(void * data) {
@@ -256,11 +405,18 @@ gboolean disengageCallBack(void * data) {
     
     if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ctrl->LockBut))) {
         gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctrl->LockBut), FALSE); 
-        printf("Disengaging!");
     }
-    else
-        printf("Rotor already disengaged!");
+    
+    return FALSE;
+}
 
+gboolean rigDisengageCallBack(void * data) {
+    GtkRigCtrl      *ctrl = GTK_RIG_CTRL(data);
+
+    if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ctrl->LockBut))) {
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctrl->LockBut), FALSE); 
+    }
+    
     return FALSE;
 }
 
