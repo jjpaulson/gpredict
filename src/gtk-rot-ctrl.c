@@ -192,8 +192,9 @@ void udp_handle_command(char * command, struct sockaddr_in remaddr, gint fd) {
     char * engage = "engagerot\n";
     char * disengage = "disengagerot\n";
     char * track = "track";
-    char * status = "retstatus\n";
-    char * position = "getPos\n";
+    char * status = "getstatus\n";
+    char * azimuth = "getaz\n";
+    char * elevation = "getel\n";
 
     char subCommand[6];
     if(strlen(command) >= 5) {
@@ -289,7 +290,7 @@ void udp_handle_command(char * command, struct sockaddr_in remaddr, gint fd) {
                 
                 gchar * satName;
                 if(ctrl->target != NULL) {
-                    satName = ctrl->target->name;    
+                    sprintf(satName, "%d", ctrl->satCatNum);  
                 }
                 else {
                     satName = "NULL";
@@ -297,20 +298,20 @@ void udp_handle_command(char * command, struct sockaddr_in remaddr, gint fd) {
                
                 gchar outStr[50];
                 if(currEngaged) {
-                    sprintf(outStr, "engaged %s\n", satName);
+                    sprintf(outStr, "[e][%s]\n", satName);
                     printf("%s", outStr);
                     sendto(fd, outStr, strlen(outStr), 0, 
                             (struct sockaddr *)&remaddr, sizeof(remaddr));
                 }
                 else {
-                    sprintf(outStr, "disengaged %s\n", satName);
+                    sprintf(outStr, "[d][%s]\n", satName);
                     printf("%s", outStr);
                     sendto(fd, outStr, strlen(outStr), 0, 
                             (struct sockaddr *)&remaddr, sizeof(remaddr)); 
                 }
                 
             }
-            else if(gpredict_strcmp(command, position) == 0) {
+            else if(gpredict_strcmp(command, azimuth) == 0) {
                 ctrl->remaddr = &remaddr;
                 ctrl->fd = fd;
 
@@ -319,9 +320,30 @@ void udp_handle_command(char * command, struct sockaddr_in remaddr, gint fd) {
                 
                 gchar out[50];
                 ctrl->azVal = gtk_label_get_text(GTK_LABEL(ctrl->AzRead));
+                //ctrl->elVal = gtk_label_get_text(GTK_LABEL(ctrl->ElRead));
+
+                g_sprintf(out, "[%s]\n", ctrl->azVal);
+                g_printf("%s", out);
+                
+
+                sendto(ctrl->fd, out, strlen(out), 0, (struct sockaddr *)(ctrl->remaddr), 
+                        sizeof(*(ctrl->remaddr)));
+                
+                //sendto(ctrl->fd, "Testing\n", strlen("Testing\n"), 0, (struct sockaddr *)(ctrl->remaddr),
+                        //sizeof(*(ctrl->remaddr)));
+            }
+            else if(gpredict_strcmp(command, elevation) == 0) {
+                ctrl->remaddr = &remaddr;
+                ctrl->fd = fd;
+
+                //g_idle_add(posCallBack, ctrl);
+
+                
+                gchar out[50];
+                //ctrl->azVal = gtk_label_get_text(GTK_LABEL(ctrl->AzRead));
                 ctrl->elVal = gtk_label_get_text(GTK_LABEL(ctrl->ElRead));
 
-                g_sprintf(out, "az[%s] el[%s]\n", ctrl->azVal, ctrl->elVal);
+                g_sprintf(out, "[%s]\n", ctrl->elVal);
                 g_printf("%s", out);
                 
 
