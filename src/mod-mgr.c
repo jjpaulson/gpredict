@@ -67,7 +67,7 @@
 extern GtkWidget *app;
 
 /* List of modules, docked and undocked */
-static GSList  *modules = NULL;
+GSList  *modules = NULL;
 
 
 /* The notebook widget for docked modules */

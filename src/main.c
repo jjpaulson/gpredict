@@ -39,6 +39,7 @@
 #include "sat-cfg.h"
 #include "sat-log.h"
 #include "gtk-rot-ctrl.h"
+#include "gtk-sat-module-popup.h"
 
 /* Main application widget. */
 GtkWidget      *app;
@@ -93,15 +94,8 @@ int main(int argc, char *argv[])
 {
     GError         *err = NULL;
     GOptionContext *context;
-    guint           error = 0;
+    guint           error = 0;	
 
-    //Opens the UDP socket and creates new thread to run listening protocol.
-    int udp_fd = udp_socket_open(50000);
-    int * fd_ptr = &(udp_fd);
-    printf("UDP FD: %d", udp_fd);
-    pthread_t thread_id;
-    pthread_create(&thread_id, NULL, udp_listen,(void *)fd_ptr);
-		
 
 #ifdef ENABLE_NLS
     bindtextdomain(PACKAGE, PACKAGE_LOCALE_DIR);
@@ -144,6 +138,9 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+
+
+
     /* create application */
     gpredict_app_create();
     gtk_widget_show_all(app);
@@ -157,7 +154,26 @@ int main(int argc, char *argv[])
     // Initializing Windozze Sockets
     InitWinSock2();
 #endif
+int udp_fd = 0;
+if(sat_cfg_get_bool(SAT_CFG_BOOL_ENABLE_REMOTE)) {
+    
+    extern GSList * modules;
+    gint page;
+    GtkWidget * module;
+    page = sat_cfg_get_int(SAT_CFG_INT_MODULE_CURRENT_PAGE);
+    module = g_slist_nth_data(modules, page);
+    rotctrl_cb_remote(module);
+    rigctrl_cb_remote(module);
 
+    //Opens the UDP socket and creates new thread to run listening protocol.
+    int udpPort = atoi(sat_cfg_get_str(SAT_CFG_STR_PORT_NUMBER));
+    udp_fd = udp_socket_open(udpPort);
+    int * fd_ptr = &(udp_fd);
+    printf("UDP FD: %d \n", udp_fd);
+    pthread_t thread_id;
+    pthread_create(&thread_id, NULL, udp_listen,(void *)fd_ptr);
+}
+	
     gtk_main();
 
     g_option_context_free(context);
@@ -165,7 +181,8 @@ int main(int argc, char *argv[])
     sat_cfg_save();
     sat_log_close();
     sat_cfg_close();
-
+    if(udp_fd != 0)
+        close(udp_fd);
 #ifdef WIN32
     CloseWinSock2();
 #endif

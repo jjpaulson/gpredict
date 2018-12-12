@@ -44,24 +44,30 @@
 
 #include <errno.h>
 #include <glib/gi18n.h>
+#include <glib/gprintf.h>
 #include <gtk/gtk.h>
 #include <math.h>
 #include <string.h>             /* strerror() */
+#include <stdlib.h>
 
 #include "compat.h"
 #include "gpredict-utils.h"
 #include "gtk-polar-plot.h"
 #include "gtk-rot-knob.h"
 #include "gtk-rot-ctrl.h"
+#include "gtk-rig-ctrl.h"
 #include "predict-tools.h"
 #include "sat-log.h"
-
+#include "sat-cfg.h"
+#include "mod-mgr.h"
+#include "gtk-sat-module-popup.h"
 
 #define FMTSTR "%7.2f\302\260"
 #define MAX_ERROR_COUNT 5
 
+static gboolean get_pos(GtkRotCtrl * ctrl, gdouble * az, gdouble * el);
 static GtkVBoxClass *parent_class = NULL;
-
+extern GSList * modules;
 
 /* Open the rotcld socket. Returns file descriptor or -1 if an error occurs */
 static gint rotctld_socket_open(const gchar * host, gint port)
@@ -125,53 +131,314 @@ static gint rotctld_socket_open(const gchar * host, gint port)
 /* Open the UDP  socket. Returns file descriptor or -1 if an error occurs */
 gint udp_socket_open(gint port)
 {
-	struct sockaddr_in myaddr;      /* our address */
-        struct sockaddr_in remaddr;     /* remote address */
-        socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
-        int recvlen;                    /* # bytes received */
-        int fd;                         /* our socket */
-        unsigned char buf[512];     /* receive buffer */
+    struct sockaddr_in myaddr;      /* our address */
+    //struct sockaddr_in remaddr;     /* remote address */
+    //socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
+    //int recvlen;                    /* # bytes received */
+    int fd;                         /* our socket */
+    //unsigned char buf[512];     /* receive buffer */
 
-        /* create a UDP socket */
+    /* create a UDP socket */
+    if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("cannot create socket\n");
+        return 0;
+    }
 
-        if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-                perror("cannot create socket\n");
-                return 0;
-        }
+    /* bind the socket to any valid IP address and a specific port */
+    memset((char *)&myaddr, 0, sizeof(myaddr));
+    myaddr.sin_family = AF_INET;
+    myaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    myaddr.sin_port = htons(port);
+    
+    if (bind(fd, (struct sockaddr *)&myaddr, sizeof(myaddr)) < 0) {
+        perror("bind failed");
+        return 0;
+    }
 
-        /* bind the socket to any valid IP address and a specific port */
-
-        memset((char *)&myaddr, 0, sizeof(myaddr));
-        myaddr.sin_family = AF_INET;
-        myaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-        myaddr.sin_port = htons(port);
-
-        if (bind(fd, (struct sockaddr *)&myaddr, sizeof(myaddr)) < 0) {
-                perror("bind failed");
-                return 0;
-        }
-
-
-	printf("UDP Socket Opened Successfully!\n");
-	return fd;
+    printf("UDP Socket Opened Successfully!\n");
+    return fd;
 }
 
 void * udp_listen(void * fd_param) {
-	int * fd = (int *)fd_param;
-	struct sockaddr_in remaddr;     /* remote address */
-        socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
-        int recvlen;
-	unsigned char buf[512];
+    int * fd = (int *)fd_param;
+    char * portNumber = sat_cfg_get_str(SAT_CFG_STR_PORT_NUMBER);
+    struct sockaddr_in remaddr;     /* remote address */
+    socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
+    int recvlen;
+    char buf[512];
 
-	for (;;) {
-                printf("waiting on port %d\n", 50000);
-                recvlen = recvfrom(*fd, buf, 512, 0, (struct sockaddr *)&remaddr, &addrlen);
-                printf("received %d bytes\n", recvlen);
-                if (recvlen > 0) {
-                        buf[recvlen] = 0;
-                        printf("received message: \"%s\"\n", buf);
-                }
+    for (;;) {
+        printf("waiting on port %s\n", portNumber);
+        recvlen = recvfrom(*fd, buf, 512, 0, (struct sockaddr *)&remaddr, &addrlen);
+        printf("received %d bytes\n", recvlen);
+        
+        if (recvlen > 0) {
+            buf[recvlen] = 0;
+            udp_handle_command(buf, remaddr, *fd);
+            //printf("received message: \"%s\"\n", buf);
         }
+    }
+}
+
+void udp_handle_command(char * command, struct sockaddr_in remaddr, gint fd) {
+    /*
+     * "engagerot\n" - engage rotator. Return "ack/nak"
+     * "disengagerot\n" - stop rotator. Return "ack/nak"
+     * "track[name]" - track satellite w/ name specified. Return "ack/nak"
+     * "retstatus" - return status. Return "[engaged/disengaged][satname]"
+     * "getPos" - return pos, az, el. Return "az[theta],el[#]"
+     * */
+    
+    char * engage = "engagerot\n";
+    char * disengage = "disengagerot\n";
+    char * track = "track";
+    char * status = "getstatus\n";
+    char * azimuth = "getaz\n";
+    char * elevation = "getel\n";
+
+    char subCommand[6];
+    if(strlen(command) >= 5) {
+        memcpy(subCommand, &command[0], 5);
+        subCommand[5] = '\0';
+    }
+
+
+    gint page;
+    GtkSatModule * module;
+    //extern GtkWidget * rot_menuitem;
+    //extern GSList * modules; 
+    page = sat_cfg_get_int(SAT_CFG_INT_MODULE_CURRENT_PAGE);
+    module = g_slist_nth_data(modules, page);
+
+
+    if(module != NULL) {
+        GtkRotCtrl * ctrl = GTK_ROT_CTRL(module->rotctrl);
+        GtkRigCtrl * rigCtrl = GTK_RIG_CTRL(module->rigctrl);
+        gboolean currTracked = ctrl->tracking;
+        gboolean currEngaged = ctrl->engaged;
+        
+
+        if(ctrl != NULL) {
+            if(gpredict_strcmp(command, engage) == 0) {
+                g_idle_add(engageCallBack, ctrl);
+                g_idle_add(rigEngageCallBack, rigCtrl);
+
+                if(!(currEngaged)) {
+                    printf("Engaging!\n");
+                    sendto(fd, "Engaging!\n", strlen("Engaging!\n"), 0, (struct sockaddr *)&remaddr,
+                            sizeof(remaddr));
+                }
+                else {
+                    printf("Already Engaged!\n");
+                    sendto(fd, "Already Engaged!\n", strlen("Already Engaged!\n"), 0, 
+                            (struct sockaddr *)&remaddr, sizeof(remaddr));
+                }
+            }
+            else if(gpredict_strcmp(command, disengage) == 0) {
+                g_idle_add(disengageCallBack, ctrl);
+                g_idle_add(rigDisengageCallBack, rigCtrl);
+
+                if(currEngaged) {
+                    printf("Disengaging!\n");
+                    sendto(fd, "Disengaging!\n", strlen("Disengaging!\n"), 0, (struct sockaddr *)&remaddr,
+                            sizeof(remaddr)); 
+                }
+                else {
+                    printf("Already Disengaged!\n");
+                    sendto(fd, "Already Disengaged!\n", strlen("Already Disengaged!\n"), 0, 
+                            (struct sockaddr *)&remaddr, sizeof(remaddr));
+                }
+            }   
+            else if(gpredict_strcmp(subCommand, track) == 0) {
+                //printf("%c", command[5]);
+                //printf("%c", command[strlen(command)-2]);
+                //printf("%li\n", strlen(command));
+                if(command[5] == '[' && command[strlen(command)-2] == ']') {
+                    int len = strlen(command) - 7;
+                    gchar satname[len];
+                    memcpy(satname, &command[6], len-1);
+                    satname[len] = '\0';
+                   
+                    //printf("%s\n", satname);
+
+                    gint satCatNum = g_strtod(satname, NULL);
+                    ctrl->satCatNum = satCatNum;
+                    rigCtrl->satCatNum = satCatNum;
+
+                    g_idle_add(trackCallBack, ctrl);
+                    g_idle_add(rigTrackCallBack, rigCtrl);
+
+                    if(!(currTracked)) {
+                        printf("Tracking!\n");
+                        sendto(fd, "Tracking!\n", strlen("Tracking!\n"), 0, (struct sockaddr *)&remaddr,
+                                sizeof(remaddr));
+                    }
+                    else {
+                        printf("Disabling Tracking!\n");
+                        sendto(fd, "Disabling Tracking!\n", strlen("Disabling Tracking!\n"), 0, 
+                                (struct sockaddr *)&remaddr, sizeof(remaddr));
+                    }
+                }
+                else {
+                    printf("Track command not properly input!\n");
+                    sendto(fd, "Track command not properly input!\n", 
+                            strlen("Track command not properly input!\n"), 0, (struct sockaddr *)&remaddr,
+                            sizeof(remaddr));
+                }
+            }
+            else if(gpredict_strcmp(command, status) == 0) {
+                
+                gchar * satName;
+                if(ctrl->target != NULL) {
+                    sprintf(satName, "%d", ctrl->satCatNum);  
+                }
+                else {
+                    satName = "NULL";
+                }
+               
+                gchar outStr[50];
+                if(currEngaged) {
+                    sprintf(outStr, "[e][%s]\n", satName);
+                    printf("%s", outStr);
+                    sendto(fd, outStr, strlen(outStr), 0, 
+                            (struct sockaddr *)&remaddr, sizeof(remaddr));
+                }
+                else {
+                    sprintf(outStr, "[d][%s]\n", satName);
+                    printf("%s", outStr);
+                    sendto(fd, outStr, strlen(outStr), 0, 
+                            (struct sockaddr *)&remaddr, sizeof(remaddr)); 
+                }
+                
+            }
+            else if(gpredict_strcmp(command, azimuth) == 0) {
+                ctrl->remaddr = &remaddr;
+                ctrl->fd = fd;
+
+                //g_idle_add(posCallBack, ctrl);
+
+                
+                gchar out[50];
+                ctrl->azVal = gtk_label_get_text(GTK_LABEL(ctrl->AzRead));
+                //ctrl->elVal = gtk_label_get_text(GTK_LABEL(ctrl->ElRead));
+
+                g_sprintf(out, "[%s]\n", ctrl->azVal);
+                g_printf("%s", out);
+                
+
+                sendto(ctrl->fd, out, strlen(out), 0, (struct sockaddr *)(ctrl->remaddr), 
+                        sizeof(*(ctrl->remaddr)));
+                
+                //sendto(ctrl->fd, "Testing\n", strlen("Testing\n"), 0, (struct sockaddr *)(ctrl->remaddr),
+                        //sizeof(*(ctrl->remaddr)));
+            }
+            else if(gpredict_strcmp(command, elevation) == 0) {
+                ctrl->remaddr = &remaddr;
+                ctrl->fd = fd;
+
+                //g_idle_add(posCallBack, ctrl);
+
+                
+                gchar out[50];
+                //ctrl->azVal = gtk_label_get_text(GTK_LABEL(ctrl->AzRead));
+                ctrl->elVal = gtk_label_get_text(GTK_LABEL(ctrl->ElRead));
+
+                g_sprintf(out, "[%s]\n", ctrl->elVal);
+                g_printf("%s", out);
+                
+
+                sendto(ctrl->fd, out, strlen(out), 0, (struct sockaddr *)(ctrl->remaddr), 
+                        sizeof(*(ctrl->remaddr)));
+                
+                //sendto(ctrl->fd, "Testing\n", strlen("Testing\n"), 0, (struct sockaddr *)(ctrl->remaddr),
+                        //sizeof(*(ctrl->remaddr)));
+            }
+            else {
+                printf("Command not recognized!\n");
+                sendto(fd, "Command not recognized!\n", strlen("Command not recognized!\n"), 0,
+                        (struct sockaddr *)&remaddr, sizeof(remaddr));
+            }
+    
+        }
+    }
+}
+
+gboolean posCallBack(void * data) {
+    GtkRotCtrl *ctrl = GTK_ROT_CTRL(data);
+
+    gchar out[50];
+
+    ctrl->azVal = gtk_label_get_text(GTK_LABEL(ctrl->AzRead));
+    ctrl->elVal = gtk_label_get_text(GTK_LABEL(ctrl->ElRead));
+
+    g_sprintf(out, "az[%s] el[%s]\n", ctrl->azVal, ctrl->elVal);
+    g_printf("%s", out);
+
+    sendto(ctrl->fd, out, strlen(out), 0, (struct sockaddr *)(ctrl->remaddr),
+                        sizeof(*(ctrl->remaddr)));
+    return FALSE;
+}
+
+gboolean rigTrackCallBack(void * data) {
+    GtkRigCtrl *ctrl = GTK_RIG_CTRL(data);
+
+    gtk_rig_ctrl_select_sat(ctrl, ctrl->satCatNum);
+
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctrl->track), 
+            !(gtk_toggle_button_get_active((GTK_TOGGLE_BUTTON(ctrl->track)))));
+
+    return FALSE;
+}
+
+gboolean trackCallBack(void * data) {
+    GtkRotCtrl     *ctrl = GTK_ROT_CTRL(data);
+
+    gtk_rot_ctrl_select_sat(ctrl, ctrl->satCatNum);
+
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctrl->track), 
+            !(gtk_toggle_button_get_active((GTK_TOGGLE_BUTTON(ctrl->track)))));
+
+    return FALSE;
+}
+
+gboolean engageCallBack(void * data) {
+    GtkRotCtrl     *ctrl = GTK_ROT_CTRL(data);
+    
+    if(!(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ctrl->LockBut)))) {
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctrl->LockBut), TRUE); 
+    }
+    
+    return FALSE;
+}
+
+gboolean rigEngageCallBack(void * data) {
+    GtkRigCtrl      *ctrl = GTK_RIG_CTRL(data);
+
+    if(!(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ctrl->LockBut)))) {
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctrl->LockBut), TRUE); 
+    }
+
+    return FALSE; 
+}
+
+gboolean disengageCallBack(void * data) {
+    GtkRotCtrl     *ctrl = GTK_ROT_CTRL(data);
+    
+    if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ctrl->LockBut))) {
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctrl->LockBut), FALSE); 
+    }
+    
+    return FALSE;
+}
+
+gboolean rigDisengageCallBack(void * data) {
+    GtkRigCtrl      *ctrl = GTK_RIG_CTRL(data);
+
+    if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ctrl->LockBut))) {
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctrl->LockBut), FALSE); 
+    }
+    
+    return FALSE;
 }
 
 /* Close a rotcld socket. First send a q command to cleanly shut down rotctld */
@@ -304,7 +571,6 @@ static gboolean is_flipped_pass(pass_t * pass, rot_az_type_t type,
             caz = detail->az;
 
             while (caz > max_az)
-                caz -= 360;
 
             while (caz < min_az)
                 caz += 360;
@@ -771,7 +1037,6 @@ static void track_toggle_cb(GtkToggleButton * button, gpointer data)
     gtk_widget_set_sensitive(ctrl->AzSet, !ctrl->tracking);
     gtk_widget_set_sensitive(ctrl->ElSet, !ctrl->tracking);
 }
-
 
 /**
  * Rotator controller timeout function
@@ -1421,7 +1686,7 @@ static GtkWidget *create_conf_widgets(GtkRotCtrl * ctrl)
             if (rotname)
             {
                 gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT
-                                               (ctrl->DevSel), rotname);
+                                                (ctrl->DevSel), rotname);
                 g_free(rotname);
             }
         }

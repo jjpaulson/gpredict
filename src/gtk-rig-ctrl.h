@@ -48,6 +48,7 @@ struct _gtk_rig_ctrl {
     GtkWidget      *DevSel;     /*!< Device selector */
     GtkWidget      *DevSel2;    /*!< Second device selector */
     GtkWidget      *LockBut;
+    GtkWidget      *track;
 
     radio_conf_t   *conf;       /*!< Radio configuration */
     radio_conf_t   *conf2;      /*!< Secondary radio configuration */
@@ -59,6 +60,7 @@ struct _gtk_rig_ctrl {
     sat_t          *target;     /*!< Target satellite */
     pass_t         *pass;       /*!< Next pass of target satellite */
     qth_t          *qth;        /*!< The QTH for this module */
+    gint            satCatNum;
 
     double          prev_ele;   /*!< Previous elevation (used for AOS/LOS signalling) */
 
