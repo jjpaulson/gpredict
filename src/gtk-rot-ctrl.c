@@ -288,23 +288,23 @@ void udp_handle_command(char * command, struct sockaddr_in remaddr, gint fd) {
             }
             else if(gpredict_strcmp(command, status) == 0) {
                 
-                gchar * satName;
+                gchar satName[20];
                 if(ctrl->target != NULL) {
                     sprintf(satName, "%d", ctrl->satCatNum);  
                 }
                 else {
-                    satName = "NULL";
+                    strcpy(satName, "NULL");
                 }
                
                 gchar outStr[50];
                 if(currEngaged) {
-                    sprintf(outStr, "[e][%s]\n", satName);
+                    sprintf(outStr, "e%s\n", satName);
                     printf("%s", outStr);
                     sendto(fd, outStr, strlen(outStr), 0, 
                             (struct sockaddr *)&remaddr, sizeof(remaddr));
                 }
                 else {
-                    sprintf(outStr, "[d][%s]\n", satName);
+                    sprintf(outStr, "d%s\n", satName);
                     printf("%s", outStr);
                     sendto(fd, outStr, strlen(outStr), 0, 
                             (struct sockaddr *)&remaddr, sizeof(remaddr)); 
@@ -322,7 +322,16 @@ void udp_handle_command(char * command, struct sockaddr_in remaddr, gint fd) {
                 ctrl->azVal = gtk_label_get_text(GTK_LABEL(ctrl->AzRead));
                 //ctrl->elVal = gtk_label_get_text(GTK_LABEL(ctrl->ElRead));
 
-                g_sprintf(out, "[%s]\n", ctrl->azVal);
+                g_sprintf(out, "%s", ctrl->azVal);
+		
+		int counter = 0;
+		while((out[counter] >= 0 && out[counter] <= 127) && out[counter] != '\0') {
+			counter++;
+		}
+		
+		gchar outDup[50];
+		strcpy(outDup, g_strndup(out, counter));
+		g_sprintf(out, "%s\n", outDup);
                 g_printf("%s", out);
                 
 
@@ -343,9 +352,17 @@ void udp_handle_command(char * command, struct sockaddr_in remaddr, gint fd) {
                 //ctrl->azVal = gtk_label_get_text(GTK_LABEL(ctrl->AzRead));
                 ctrl->elVal = gtk_label_get_text(GTK_LABEL(ctrl->ElRead));
 
-                g_sprintf(out, "[%s]\n", ctrl->elVal);
+                g_sprintf(out, "%s\n", ctrl->elVal);
+		
+		int counter = 0;
+		while((out[counter] >= 0 && out[counter] <= 127) && out[counter] != '\0') {
+			counter++;
+		}
+		
+		gchar outDup[50];
+		strcpy(outDup, g_strndup(out, counter));
+		g_sprintf(out, "%s\n", outDup);
                 g_printf("%s", out);
-                
 
                 sendto(ctrl->fd, out, strlen(out), 0, (struct sockaddr *)(ctrl->remaddr), 
                         sizeof(*(ctrl->remaddr)));
