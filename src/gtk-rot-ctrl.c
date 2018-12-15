@@ -189,12 +189,12 @@ void udp_handle_command(char * command, struct sockaddr_in remaddr, gint fd) {
      * "getPos" - return pos, az, el. Return "az[theta],el[#]"
      * */
     
-    char * engage = "engagerot\n";
-    char * disengage = "disengagerot\n";
+    char * engage = "engagerot";
+    char * disengage = "disengagerot";
     char * track = "track";
-    char * status = "getstatus\n";
-    char * azimuth = "getaz\n";
-    char * elevation = "getel\n";
+    char * status = "getstatus";
+    char * azimuth = "getaz";
+    char * elevation = "getel";
 
     char subCommand[6];
     if(strlen(command) >= 5) {
