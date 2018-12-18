@@ -161,16 +161,16 @@ gint udp_socket_open(gint port)
 
 void * udp_listen(void * fd_param) {
     int * fd = (int *)fd_param;
-    char * portNumber = sat_cfg_get_str(SAT_CFG_STR_PORT_NUMBER);
+    //char * portNumber = sat_cfg_get_str(SAT_CFG_STR_PORT_NUMBER);
     struct sockaddr_in remaddr;     /* remote address */
     socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
     int recvlen;
     char buf[512];
 
     for (;;) {
-        printf("waiting on port %s\n", portNumber);
+        //printf("waiting on port %s\n", portNumber);
         recvlen = recvfrom(*fd, buf, 512, 0, (struct sockaddr *)&remaddr, &addrlen);
-        printf("received %d bytes\n", recvlen);
+        //printf("received %d bytes\n", recvlen);
         
         if (recvlen > 0) {
             buf[recvlen] = 0;
@@ -182,11 +182,12 @@ void * udp_listen(void * fd_param) {
 
 void udp_handle_command(char * command, struct sockaddr_in remaddr, gint fd) {
     /*
-     * "engagerot\n" - engage rotator. Return "ack/nak"
-     * "disengagerot\n" - stop rotator. Return "ack/nak"
-     * "track[name]" - track satellite w/ name specified. Return "ack/nak"
-     * "retstatus" - return status. Return "[engaged/disengaged][satname]"
-     * "getPos" - return pos, az, el. Return "az[theta],el[#]"
+     * "engagerot" - engage rotator and radio. Return "ack/nak"
+     * "disengagerot" - stop rotator and radio. Return "ack/nak"
+     * "track[satCatalogueNumber]" - track satellite w/ cat number specified. Return "ack/nak"
+     * "getstatus" - return status. Return "[e/d][satCatalogueNumber]"
+     * "getel" - return elevation. Return "el"
+     * "getaz" - return azimuth. Return "az"
      * */
     
     char * engage = "engagerot";
@@ -196,29 +197,36 @@ void udp_handle_command(char * command, struct sockaddr_in remaddr, gint fd) {
     char * azimuth = "getaz";
     char * elevation = "getel";
 
+    //Creates a subcommand string to account for track with its satellite parameter.
     char subCommand[6];
     if(strlen(command) >= 5) {
         memcpy(subCommand, &command[0], 5);
         subCommand[5] = '\0';
     }
 
-
+    //Handles acquiring the current module at the time of call
     gint page;
     GtkSatModule * module;
-    //extern GtkWidget * rot_menuitem;
-    //extern GSList * modules; 
     page = sat_cfg_get_int(SAT_CFG_INT_MODULE_CURRENT_PAGE);
     module = g_slist_nth_data(modules, page);
 
-
     if(module != NULL) {
+        //Grabs the controllers for the rotator and the radio
         GtkRotCtrl * ctrl = GTK_ROT_CTRL(module->rotctrl);
         GtkRigCtrl * rigCtrl = GTK_RIG_CTRL(module->rigctrl);
         gboolean currTracked = ctrl->tracking;
         gboolean currEngaged = ctrl->engaged;
         
+        /*
+        if(module->rotctrlwin == NULL) {
+            g_idle_add(rotWinCallBack, module);
+        }
+        if(module->rigctrlwin == NULL) {
+            g_idle_add(rigWinCallBack, module);
+        }    
+        */
 
-        if(ctrl != NULL) {
+        if(ctrl != NULL && rigCtrl != NULL) {
             if(gpredict_strcmp(command, engage) == 0) {
                 g_idle_add(engageCallBack, ctrl);
                 g_idle_add(rigEngageCallBack, rigCtrl);
@@ -250,9 +258,7 @@ void udp_handle_command(char * command, struct sockaddr_in remaddr, gint fd) {
                 }
             }   
             else if(gpredict_strcmp(subCommand, track) == 0) {
-                //printf("%c", command[5]);
-                //printf("%c", command[strlen(command)-2]);
-                //printf("%li\n", strlen(command));
+
                 if(command[5] == '[' && command[strlen(command)-2] == ']') {
                     int len = strlen(command) - 7;
                     gchar satname[len];
@@ -314,61 +320,52 @@ void udp_handle_command(char * command, struct sockaddr_in remaddr, gint fd) {
             else if(gpredict_strcmp(command, azimuth) == 0) {
                 ctrl->remaddr = &remaddr;
                 ctrl->fd = fd;
-
-                //g_idle_add(posCallBack, ctrl);
-
                 
                 gchar out[50];
                 ctrl->azVal = gtk_label_get_text(GTK_LABEL(ctrl->AzRead));
-                //ctrl->elVal = gtk_label_get_text(GTK_LABEL(ctrl->ElRead));
 
                 g_sprintf(out, "%s", ctrl->azVal);
 		
-		int counter = 0;
-		while((out[counter] >= 0 && out[counter] <= 127) && out[counter] != '\0') {
-			counter++;
-		}
+                g_printf("Size of out array before modification: %ld\n", strlen(out));
+
+		        int counter = 0;
+		        while((out[counter] >= 0 && out[counter] <= 127) && out[counter] != '\0') {
+		        	counter++;
+		        }
 		
-		gchar outDup[50];
-		strcpy(outDup, g_strndup(out, counter));
-		g_sprintf(out, "%s\n", outDup);
+		        gchar outDup[50];
+		        strcpy(outDup, g_strndup(out, counter));
+		        g_sprintf(out, "%s\n", outDup);
+                g_printf("Size of out array after modification: %ld\n", strlen(out));
                 g_printf("%s", out);
                 
-
                 sendto(ctrl->fd, out, strlen(out), 0, (struct sockaddr *)(ctrl->remaddr), 
                         sizeof(*(ctrl->remaddr)));
-                
-                //sendto(ctrl->fd, "Testing\n", strlen("Testing\n"), 0, (struct sockaddr *)(ctrl->remaddr),
-                        //sizeof(*(ctrl->remaddr)));
             }
             else if(gpredict_strcmp(command, elevation) == 0) {
                 ctrl->remaddr = &remaddr;
                 ctrl->fd = fd;
 
-                //g_idle_add(posCallBack, ctrl);
-
-                
                 gchar out[50];
-                //ctrl->azVal = gtk_label_get_text(GTK_LABEL(ctrl->AzRead));
                 ctrl->elVal = gtk_label_get_text(GTK_LABEL(ctrl->ElRead));
 
-                g_sprintf(out, "%s\n", ctrl->elVal);
+                g_sprintf(out, "%s", ctrl->elVal);
 		
-		int counter = 0;
-		while((out[counter] >= 0 && out[counter] <= 127) && out[counter] != '\0') {
-			counter++;
-		}
+                g_printf("Size of out array before modification: %ld\n", strlen(out));
+
+		        int counter = 0;
+		        while((out[counter] >= 0 && out[counter] <= 127) && out[counter] != '\0') {
+		        	counter++;
+		        }
 		
-		gchar outDup[50];
-		strcpy(outDup, g_strndup(out, counter));
-		g_sprintf(out, "%s\n", outDup);
+		        gchar outDup[50];
+		        strcpy(outDup, g_strndup(out, counter));
+		        g_sprintf(out, "%s\n", outDup);
+                g_printf("Size of out array after modification: %ld\n", strlen(out));
                 g_printf("%s", out);
 
                 sendto(ctrl->fd, out, strlen(out), 0, (struct sockaddr *)(ctrl->remaddr), 
                         sizeof(*(ctrl->remaddr)));
-                
-                //sendto(ctrl->fd, "Testing\n", strlen("Testing\n"), 0, (struct sockaddr *)(ctrl->remaddr),
-                        //sizeof(*(ctrl->remaddr)));
             }
             else {
                 printf("Command not recognized!\n");
@@ -377,9 +374,28 @@ void udp_handle_command(char * command, struct sockaddr_in remaddr, gint fd) {
             }
     
         }
+        else {
+            printf("Rotator or Radio device not set up in program.\n");
+            sendto(fd, "Rotator or Radio device not set up in program!\n", strlen("Rotator or Radio device not set up in program!\n"), 0,
+                        (struct sockaddr *)&remaddr, sizeof(remaddr));
+        }
     }
 }
+/*
+gboolean rotWinCallBack(void * data) {
+    GtkSatModule * module = data;
+    rotctrl_cb_remote(module);
 
+    return FALSE;
+}
+
+gboolean rigWinCallBack(void * data) {
+    GtkSatModule * module = data;
+    rigctrl_cb_remote(module);
+
+    return FALSE;
+}
+*/
 gboolean posCallBack(void * data) {
     GtkRotCtrl *ctrl = GTK_ROT_CTRL(data);
 
