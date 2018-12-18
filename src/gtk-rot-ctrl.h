@@ -108,6 +108,8 @@ gint udp_socket_open(gint port);
 void * udp_listen(void * vargp);
 void udp_handle_command(char * command, struct sockaddr_in remaddr, int fd);
 
+gboolean rotWinCallBack(void * data);
+gboolean rigWinCallBack(void * data);
 
 gboolean rigTrackCallBack(void * data);
 gboolean trackCallBack(void * data);
