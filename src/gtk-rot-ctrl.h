@@ -109,8 +109,14 @@ void udp_handle_command(char * command, struct sockaddr_in remaddr, int fd);
 gboolean rotWinCallBack(void * data);
 gboolean rigWinCallBack(void * data);
 
-gboolean rigTrackCallBack(void * data);
-gboolean trackCallBack(void * data);
+gboolean setSatCallBack(void * data);
+gboolean rigSetSatCallBack(void * data);
+
+gboolean rigStartTrackCallBack(void * data);
+gboolean startTrackCallBack(void * data);
+
+gboolean rigStopTrackCallBack(void * data);
+gboolean stopTrackCallBack(void * data);
 
 gboolean engageCallBack(void * data);
 gboolean rigEngageCallBack(void * data);
