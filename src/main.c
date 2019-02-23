@@ -154,6 +154,7 @@ int main(int argc, char *argv[])
     // Initializing Windozze Sockets
     InitWinSock2();
 #endif
+
 int udp_fd = 0;
 if(sat_cfg_get_bool(SAT_CFG_BOOL_ENABLE_REMOTE)) {
     
@@ -181,8 +182,10 @@ if(sat_cfg_get_bool(SAT_CFG_BOOL_ENABLE_REMOTE)) {
     sat_cfg_save();
     sat_log_close();
     sat_cfg_close();
+
     if(udp_fd != 0)
         close(udp_fd);
+
 #ifdef WIN32
     CloseWinSock2();
 #endif
