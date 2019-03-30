@@ -163,8 +163,6 @@ if(sat_cfg_get_bool(SAT_CFG_BOOL_ENABLE_REMOTE)) {
     GtkWidget * module;
     page = sat_cfg_get_int(SAT_CFG_INT_MODULE_CURRENT_PAGE);
     module = g_slist_nth_data(modules, page);
-    rotctrl_cb_remote(module);
-    rigctrl_cb_remote(module);
 
     //Opens the UDP socket and creates new thread to run listening protocol.
     int udpPort = atoi(sat_cfg_get_str(SAT_CFG_STR_PORT_NUMBER));
